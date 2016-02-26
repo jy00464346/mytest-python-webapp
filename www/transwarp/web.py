@@ -617,8 +617,7 @@ class StaticFileRoute(object):
         if not os.path.isfile(fpath):
             raise notfound()
         fext = os.path.splitext(fpath)[1]
-        ctx.response.content_type = mimetypes.types_map.get(
-            fext.lower(), 'application/octet-stream')
+        ctx.response.content_type = mimetypes.types_map.get(fext.lower(), 'application/octet-stream')
         return _static_file_generator(fpath)
 
 
@@ -713,7 +712,7 @@ class Request(object):
         >>> r.get('a')
         u'1'
         >>> r.get('empty')
-        >>> r.get('empty', 'DEFAULT')
+        >>> r.get('empty','DEFAULT')
         'DEFAULT'
         '''
         r = self._get_raw_input().get(key, default)
@@ -759,7 +758,7 @@ class Request(object):
         u'ABC'
         >>> i.x
         2008
-        >>> i.get('d', u'100')
+        >>> i.get('d',u'100')
         u'100'
         >>> i.x
         2008
@@ -829,7 +828,7 @@ class Request(object):
         >>> r.environ.get('wsgi.url_scheme')
         'http'
         >>> r.environ.get('SERVER_NAME')
-        >>> r.environ.get('SERVER_NAME', 'unamed')
+        >>> r.environ.get('SERVER_NAME','unamed')
         'unamed'
         '''
         return self._environ

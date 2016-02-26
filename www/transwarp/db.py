@@ -1,5 +1,10 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
+import time
+import uuid
+import functools
+import threading
+import logging
 
 __author__ = 'Muzy'
 
@@ -7,17 +12,12 @@ __author__ = 'Muzy'
 Database operation module.
 '''
 
-import time
-import uuid
-import functools
-import threading
-import logging
 
 # Dict object:
 
 
 class Dict(dict):
-    '''
+    """
     Simple dict but support access as x.y style.
 
     >>> d1 = Dict()
@@ -45,7 +45,7 @@ class Dict(dict):
     2
     >>> d3.c
     3
-    '''
+    """
 
     def __init__(self, names=(), values=(), **kw):
         super(Dict, self).__init__(**kw)
@@ -63,12 +63,12 @@ class Dict(dict):
 
 
 def next_id(t=None):
-    '''
+    """
     Return next id as 50-char string.
 
     Args:
         t: unix timestamp, default to None and using time.time().
-    '''
+    """
     if t is None:
         t = time.time()
     return '%015d%s000' % (int(t * 1000), uuid.uuid4().hex)
@@ -91,15 +91,14 @@ class MultiColumnsError(DBError):
 
 
 class _LasyConnection(object):
-
     def __init__(self):
         self.connection = None
 
     def cursor(self):
         if self.connection is None:
-            connection = engine.connect()
-            logging.info('open connection <%s>...' % hex(id(connection)))
-            self.connection = connection
+            conn = engine.connect()
+            logging.info('open connection <%s>...' % hex(id(conn)))
+            self.connection = conn
         return self.connection.cursor()
 
     def commit(self):
@@ -110,18 +109,19 @@ class _LasyConnection(object):
 
     def cleanup(self):
         if self.connection:
-            connection = self.connection
+            conn = self.connection
             self.connection = None
-            logging.info('close connection <%s>...' % hex(id(connection)))
-            connection.close()
+            logging.info('close connection <%s>...' % hex(id(conn)))
+            conn.close()
 
 
 class _DbCtx(threading.local):
-    '''
+    """
     Thread local object that holds connection info.
-    '''
+    """
 
-    def __init__(self):
+    def __init__(self, *args, **kwargs):
+        super(_DbCtx, self).__init__(*args, **kwargs)
         self.connection = None
         self.transactions = 0
 
@@ -138,10 +138,11 @@ class _DbCtx(threading.local):
         self.connection = None
 
     def cursor(self):
-        '''
+        """
         Return cursor
-        '''
+        """
         return self.connection.cursor()
+
 
 # thread-local db context:
 _db_ctx = _DbCtx()
@@ -151,7 +152,6 @@ engine = None
 
 
 class _Engine(object):
-
     def __init__(self, connect):
         self._connect = connect
 
@@ -178,15 +178,15 @@ def create_engine(user, password, database, host='127.0.0.1', port=3306, **kw):
 
 
 class _ConnectionCtx(object):
-    '''
-    _ConnectionCtx object that can open and close connection context. _ConnectionCtx object can be nested and only the most 
+    """
+    _ConnectionCtx object that can open and close connection context. _ConnectionCtx object can be nested and only the most
     outer connection has effect.
 
     with connection():
         pass
         with connection():
             pass
-    '''
+    """
 
     def __enter__(self):
         global _db_ctx
@@ -203,17 +203,17 @@ class _ConnectionCtx(object):
 
 
 def connection():
-    '''
+    """
     Return _ConnectionCtx object that can be used by 'with' statement:
 
     with connection():
         pass
-    '''
+    """
     return _ConnectionCtx()
 
 
 def with_connection(func):
-    '''
+    """
     Decorator for reuse connection.
 
     @with_connection
@@ -221,21 +221,23 @@ def with_connection(func):
         f1()
         f2()
         f3()
-    '''
+    """
+
     @functools.wraps(func)
     def _wrapper(*args, **kw):
         with _ConnectionCtx():
             return func(*args, **kw)
+
     return _wrapper
 
 
 class _TransactionCtx(object):
-    '''
+    """
     _TransactionCtx object that can handle transactions.
 
     with _TransactionCtx():
         pass
-    '''
+    """
 
     def __enter__(self):
         global _db_ctx
@@ -244,14 +246,13 @@ class _TransactionCtx(object):
             # needs open a connection first:
             _db_ctx.init()
             self.should_close_conn = True
-        _db_ctx.transactions = _db_ctx.transactions + 1
-        logging.info('begin transaction...' if _db_ctx.transactions ==
-                     1 else 'join current transaction...')
+        _db_ctx.transactions += 1
+        logging.info('begin transaction...' if _db_ctx.transactions == 1 else 'join current transaction...')
         return self
 
     def __exit__(self, exctype, excvalue, traceback):
         global _db_ctx
-        _db_ctx.transactions = _db_ctx.transactions - 1
+        _db_ctx.transactions -= 1
         try:
             if _db_ctx.transactions == 0:
                 if exctype is None:
@@ -262,7 +263,8 @@ class _TransactionCtx(object):
             if self.should_close_conn:
                 _db_ctx.cleanup()
 
-    def commit(self):
+    @staticmethod
+    def commit():
         global _db_ctx
         logging.info('commit transaction...')
         try:
@@ -274,7 +276,8 @@ class _TransactionCtx(object):
             logging.warning('rollback ok.')
             raise
 
-    def rollback(self):
+    @staticmethod
+    def rollback():
         global _db_ctx
         logging.warning('rollback transaction...')
         _db_ctx.connection.rollback()
@@ -282,7 +285,7 @@ class _TransactionCtx(object):
 
 
 def transaction():
-    '''
+    """
     Create a transaction object so can use with statement:
 
     with transaction():
@@ -305,12 +308,12 @@ def transaction():
     StandardError: will cause rollback...
     >>> select('select * from user where id=?', 900302)
     []
-    '''
+    """
     return _TransactionCtx()
 
 
 def with_transaction(func):
-    '''
+    """
     A decorator that makes function around transaction.
 
     >>> @with_transaction
@@ -329,20 +332,24 @@ def with_transaction(func):
     StandardError: will cause rollback...
     >>> select('select * from user where id=?', 9090)
     []
-    '''
+    """
+
     @functools.wraps(func)
     def _wrapper(*args, **kw):
         _start = time.time()
         with _TransactionCtx():
-            return func(*args, **kw)
+            ret = func(*args, **kw)
         _profiling(_start)
+        return ret
+
     return _wrapper
 
 
 def _select(sql, first, *args):
-    ' execute select SQL and return unique result or list results.'
+    """ execute select SQL and return unique result or list results."""
     global _db_ctx
     cursor = None
+    names = None
     sql = sql.replace('?', '%s')
     logging.info('SQL: %s, ARGS: %s' % (sql, args))
     try:
@@ -363,8 +370,8 @@ def _select(sql, first, *args):
 
 @with_connection
 def select_one(sql, *args):
-    '''
-    Execute select SQL and expected one result. 
+    """
+    Execute select SQL and expected one result.
     If no result found, return None.
     If multiple results found, the first one returned.
 
@@ -381,14 +388,17 @@ def select_one(sql, *args):
     >>> u2 = select_one('select * from user where passwd=? order by email', 'ABC-12345')
     >>> u2.name
     u'Alice'
-    '''
+
+    Args:
+        sql:
+    """
     return _select(sql, True, *args)
 
 
 @with_connection
 def select_int(sql, *args):
-    '''
-    Execute select SQL and expected one int and only one int result. 
+    """
+    Execute select SQL and expected one int and only one int result.
 
     >>> n = update('delete from user')
     >>> u1 = dict(id=96900, name='Ada', email='ada@test.org', passwd='A-12345', last_modified=time.time())
@@ -409,7 +419,7 @@ def select_int(sql, *args):
     Traceback (most recent call last):
         ...
     MultiColumnsError: Expect only one column.
-    '''
+    """
     d = _select(sql, True, *args)
     if len(d) != 1:
         raise MultiColumnsError('Expect only one column.')
@@ -418,7 +428,7 @@ def select_int(sql, *args):
 
 @with_connection
 def select(sql, *args):
-    '''
+    """
     Execute select SQL and return list or empty list if no result.
 
     >>> u1 = dict(id=200, name='Wall.E', email='wall.e@test.org', passwd='back-to-earth', last_modified=time.time())
@@ -438,7 +448,7 @@ def select(sql, *args):
     u'Eva'
     >>> L[1].name
     u'Wall.E'
-    '''
+    """
     return _select(sql, False, *args)
 
 
@@ -463,7 +473,7 @@ def _update(sql, *args):
 
 
 def insert(table, **kw):
-    '''
+    """
     Execute insert SQL.
 
     >>> u1 = dict(id=2000, name='Bob', email='bob@test.org', passwd='bobobob', last_modified=time.time())
@@ -476,7 +486,7 @@ def insert(table, **kw):
     Traceback (most recent call last):
       ...
     IntegrityError: 1062 (23000): Duplicate entry '2000' for key 'PRIMARY'
-    '''
+    """
     cols, args = zip(*kw.iteritems())
     sql = 'insert into `%s` (%s) values (%s)' % (table, ','.join(
         ['`%s`' % col for col in cols]), ','.join(['?' for i in range(len(cols))]))
@@ -484,7 +494,7 @@ def insert(table, **kw):
 
 
 def update(sql, *args):
-    r'''
+    r"""
     Execute update SQL.
 
     >>> u1 = dict(id=1000, name='Michael', email='michael@test.org', passwd='123456', last_modified=time.time())
@@ -504,8 +514,9 @@ def update(sql, *args):
     u'654321'
     >>> update('update user set passwd=? where id=?', '***', '123\' or id=\'456')
     0
-    '''
+    """
     return _update(sql, *args)
+
 
 if __name__ == '__main__':
     logging.basicConfig(level=logging.DEBUG)
@@ -513,4 +524,5 @@ if __name__ == '__main__':
     update('drop table if exists user')
     update('create table user (id int primary key, name text, email text, passwd text, last_modified real)')
     import doctest
+
     doctest.testmod()

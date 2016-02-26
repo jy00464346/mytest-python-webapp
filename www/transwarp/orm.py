@@ -1,20 +1,19 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
+
+import time
+import logging
+import db
+
 __author__ = 'Muzy'
 
 '''
 Database operation module. This module is independent with web module.
 '''
 
-import time
-import logging
-
-import db
-
 
 class Field(object):
-
     _count = 0
 
     def __init__(self, **kw):
@@ -26,7 +25,7 @@ class Field(object):
         self.insertable = kw.get('insertable', True)
         self.ddl = kw.get('ddl', '')
         self._order = Field._count
-        Field._count = Field._count + 1
+        Field._count += 1
 
     @property
     def default(self):
@@ -44,7 +43,6 @@ class Field(object):
 
 
 class StringField(Field):
-
     def __init__(self, **kw):
         if not 'default' in kw:
             kw['default'] = ''
@@ -54,7 +52,6 @@ class StringField(Field):
 
 
 class IntegerField(Field):
-
     def __init__(self, **kw):
         if not 'default' in kw:
             kw['default'] = 0
@@ -64,7 +61,6 @@ class IntegerField(Field):
 
 
 class FloatField(Field):
-
     def __init__(self, **kw):
         if not 'default' in kw:
             kw['default'] = 0.0
@@ -74,7 +70,6 @@ class FloatField(Field):
 
 
 class BooleanField(Field):
-
     def __init__(self, **kw):
         if not 'default' in kw:
             kw['default'] = False
@@ -84,7 +79,6 @@ class BooleanField(Field):
 
 
 class TextField(Field):
-
     def __init__(self, **kw):
         if not 'default' in kw:
             kw['default'] = ''
@@ -94,7 +88,6 @@ class TextField(Field):
 
 
 class BlobField(Field):
-
     def __init__(self, **kw):
         if not 'default' in kw:
             kw['default'] = ''
@@ -104,9 +97,9 @@ class BlobField(Field):
 
 
 class VersionField(Field):
-
     def __init__(self, name=None):
         super(VersionField, self).__init__(name=name, default=0, ddl='bigint')
+
 
 _triggers = frozenset(['pre_insert', 'pre_update', 'pre_delete'])
 
@@ -130,9 +123,10 @@ def _gen_sql(table_name, mappings):
 
 
 class ModelMetaclass(type):
-    '''
+    """
     Metaclass for model objects.
-    '''
+    """
+
     def __new__(cls, name, bases, attrs):
         # skip base Model class:
         if name == 'Model':
@@ -186,7 +180,7 @@ class ModelMetaclass(type):
 
 
 class Model(dict):
-    '''
+    """
     Base class for ORM.
 
     >>> class User(Model):
@@ -231,7 +225,7 @@ class Model(dict):
       `last_modified` real not null,
       primary key(`id`)
     );
-    '''
+    """
     __metaclass__ = ModelMetaclass
 
     def __init__(self, **kw):
@@ -247,9 +241,12 @@ class Model(dict):
         self[key] = value
 
     @classmethod
-    def get(cls, pk):
+    def get(cls, pk, **kwargs):
         '''
         Get by primary key.
+
+        Args:
+            **kwargs:
         '''
         d = db.select_one('select * from %s where %s=?' %
                           (cls.__table__, cls.__primary_key__.name), pk)
@@ -257,47 +254,48 @@ class Model(dict):
 
     @classmethod
     def find_first(cls, where, *args):
-        '''
-        Find by where clause and return one result. If multiple results found, 
+        """
+        Find by where clause and return one result. If multiple results found,
         only the first one returned. If no result found, return None.
-        '''
+        """
         d = db.select_one('select * from %s %s' %
                           (cls.__table__, where), *args)
         return cls(**d) if d else None
 
     @classmethod
     def find_all(cls, *args):
-        '''
+        """
         Find all and return list.
-        '''
+        """
         L = db.select('select * from `%s`' % cls.__table__)
         return [cls(**d) for d in L]
 
     @classmethod
     def find_by(cls, where, *args):
-        '''
+        """
         Find by where clause and return list.
-        '''
+        """
         L = db.select('select * from `%s` %s' % (cls.__table__, where), *args)
         return [cls(**d) for d in L]
 
     @classmethod
     def count_all(cls):
-        '''
+        """
         Find by 'select count(pk) from table' and return integer.
-        '''
+        """
         return db.select_int('select count(`%s`) from `%s`' % (cls.__primary_key__.name, cls.__table__))
 
     @classmethod
     def count_by(cls, where, *args):
-        '''
+        """
         Find by 'select count(pk) from table where ... ' and return int.
-        '''
-        return db.select_int('select count(`%s`) from `%s` %s' % (cls.__primary_key__.name, cls.__table__, where), *args)
+        """
+        return db.select_int('select count(`%s`) from `%s` %s' % (cls.__primary_key__.name, cls.__table__, where),
+                             *args)
 
-    def update(self):
+    def update(self, **kwargs):
         self.pre_update and self.pre_update()
-        L = []
+        l = []
         args = []
         for k, v in self.__mappings__.iteritems():
             if v.updatable:
@@ -306,18 +304,18 @@ class Model(dict):
                 else:
                     arg = v.default
                     setattr(self, k, arg)
-                L.append('`%s`=?' % k)
+                l.append('`%s`=?' % k)
                 args.append(arg)
         pk = self.__primary_key__.name
         args.append(getattr(self, pk))
         db.update('update `%s` set %s where %s=?' %
-                  (self.__table__, ','.join(L), pk), *args)
+                  (self.__table__, ','.join(l), pk), *args)
         return self
 
     def delete(self):
         self.pre_delete and self.pre_delete()
         pk = self.__primary_key__.name
-        args = (getattr(self, pk), )
+        args = (getattr(self, pk),)
         db.update('delete from `%s` where `%s`=?' %
                   (self.__table__, pk), *args)
         return self
@@ -333,6 +331,7 @@ class Model(dict):
         db.insert('%s' % self.__table__, **params)
         return self
 
+
 if __name__ == '__main__':
     logging.basicConfig(level=logging.DEBUG)
     db.create_engine('mysql', 'mysql', 'test')
@@ -340,4 +339,5 @@ if __name__ == '__main__':
     db.update(
         'create table user (id int primary key, name text, email text, passwd text, last_modified real)')
     import doctest
+
     doctest.testmod()
