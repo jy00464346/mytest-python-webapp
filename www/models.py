@@ -1,19 +1,16 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
+import time
+
+from transwarp.db import next_id
+from transwarp.orm import Model, StringField, BooleanField, FloatField, TextField
 
 __author__ = 'Muzy'
-
 
 '''
 Models for user, blog, comment.
 '''
-
-import time
-import uuid
-
-from transwarp.db import next_id
-from transwarp.orm import Model, StringField, BooleanField, FloatField, TextField
 
 
 class User(Model):
